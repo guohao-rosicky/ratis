@@ -40,12 +40,17 @@ import org.apache.ratis.statemachine.impl.SimpleStateMachineStorage;
 import org.apache.ratis.thirdparty.com.google.protobuf.ByteString;
 import org.apache.ratis.thirdparty.com.google.protobuf.InvalidProtocolBufferException;
 import org.apache.ratis.util.FileUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
 
 public class FileStoreStateMachine extends BaseStateMachine {
+
+  public static final Logger LOG = LoggerFactory.getLogger(FileStoreStateMachine.class);
+
   private final SimpleStateMachineStorage storage = new SimpleStateMachineStorage();
 
   private final FileStore files;
@@ -57,6 +62,8 @@ public class FileStoreStateMachine extends BaseStateMachine {
   @Override
   public void initialize(RaftServer server, RaftGroupId groupId, RaftStorage raftStorage)
       throws IOException {
+    LOG.debug("XTDebug initialize server: {} groupId: {} storage: {}", server.getId(), groupId.getUuid().toString(), raftStorage.getStorageDir().getCurrentDir());
+
     super.initialize(server, groupId, raftStorage);
     this.storage.init(raftStorage);
     for (Path path : files.getRoots()) {
@@ -71,6 +78,8 @@ public class FileStoreStateMachine extends BaseStateMachine {
 
   @Override
   public void close() {
+    LOG.debug("XTDebug close");
+
     files.close();
     setLastAppliedTermIndex(null);
   }
@@ -85,6 +94,9 @@ public class FileStoreStateMachine extends BaseStateMachine {
     }
 
     final String path = proto.getPath().toStringUtf8();
+
+    LOG.debug("XTDebug query path: {} offset: {} length: {}", path, proto.getOffset(), proto.getLength());
+
     return files.read(path, proto.getOffset(), proto.getLength(), true)
         .thenApply(reply -> Message.valueOf(reply.toByteString()));
   }
@@ -105,6 +117,9 @@ public class FileStoreStateMachine extends BaseStateMachine {
     } else {
       b.setLogData(content);
     }
+
+    LOG.debug("XTDebug startTransaction case: {}", proto.getRequestCase());
+
     return b.build();
   }
 
@@ -124,11 +139,14 @@ public class FileStoreStateMachine extends BaseStateMachine {
     }
 
     final WriteRequestHeaderProto h = proto.getWriteHeader();
+
+    LOG.debug("XTDebug write case: {} path: {} offset: {} length: {}", proto.getRequestCase(), h.getPath(), h.getOffset(), h.getLength());
+
     final CompletableFuture<Integer> f = files.write(entry.getIndex(),
-        h.getPath().toStringUtf8(), h.getClose(),  h.getSync(), h.getOffset(),
+        h.getPath().toStringUtf8(), h.getClose(), h.getSync(), h.getOffset(),
         smLog.getStateMachineEntry().getStateMachineData());
     // sync only if closing the file
-    return h.getClose()? f: null;
+    return h.getClose() ? f : null;
   }
 
   @Override
@@ -147,6 +165,9 @@ public class FileStoreStateMachine extends BaseStateMachine {
     }
 
     final WriteRequestHeaderProto h = proto.getWriteHeader();
+
+    LOG.debug("XTDebug read case: {} path: {} offset: {} length: {}", proto.getRequestCase(), h.getPath(), h.getOffset(), h.getLength());
+
     CompletableFuture<ExamplesProtos.ReadReplyProto> reply =
         files.read(h.getPath().toStringUtf8(), h.getOffset(), h.getLength(), false);
 
@@ -188,13 +209,16 @@ public class FileStoreStateMachine extends BaseStateMachine {
       return FileStoreCommon.completeExceptionally(
           "Failed to parse stream header", e);
     }
+
+    LOG.debug("XTDebug stream case: {} path: {}", proto.getRequestCase(), proto.getStream().getPath().toStringUtf8());
+
     return files.createDataChannel(proto.getStream().getPath().toStringUtf8())
         .thenApply(LocalStream::new);
   }
 
   @Override
   public CompletableFuture<?> link(DataStream stream, LogEntryProto entry) {
-    LOG.info("linking {}", stream);
+    LOG.debug("XTDebug linking index: {}", entry.getIndex());
     return files.streamLink(stream);
   }
 
@@ -214,7 +238,9 @@ public class FileStoreStateMachine extends BaseStateMachine {
           "Failed to parse logData in" + smLog, e);
     }
 
-    switch(request.getRequestCase()) {
+    LOG.debug("XTDebug applyTransaction case: {} index: {}", request.getRequestCase(), index);
+
+    switch (request.getRequestCase()) {
       case DELETE:
         return delete(index, request.getDelete());
       case WRITEHEADER:
@@ -234,6 +260,9 @@ public class FileStoreStateMachine extends BaseStateMachine {
   private CompletableFuture<Message> writeCommit(
       long index, WriteRequestHeaderProto header, int size) {
     final String path = header.getPath().toStringUtf8();
+
+    LOG.debug("XTDebug writeCommit size: {} index: {} path: {} offset: {} length: {}", size, index, header.getPath(), header.getOffset(), header.getLength());
+
     return files.submitCommit(index, path, header.getClose(), header.getOffset(), size)
         .thenApply(reply -> Message.valueOf(reply.toByteString()));
   }
@@ -241,11 +270,17 @@ public class FileStoreStateMachine extends BaseStateMachine {
   private CompletableFuture<Message> streamCommit(StreamWriteRequestProto stream) {
     final String path = stream.getPath().toStringUtf8();
     final long size = stream.getLength();
+
+    LOG.debug("XTDebug streamCommit size: {} path: {}", size, path);
+
     return files.streamCommit(path, size).thenApply(reply -> Message.valueOf(reply.toByteString()));
   }
 
   private CompletableFuture<Message> delete(long index, DeleteRequestProto request) {
     final String path = request.getPath().toStringUtf8();
+
+    LOG.debug("XTDebug delete index: {} path: {}", index, path);
+
     return files.delete(index, path).thenApply(resolved ->
         Message.valueOf(DeleteReplyProto.newBuilder().setResolvedPath(
             FileStoreCommon.toByteString(resolved)).build().toByteString(),
