@@ -28,6 +28,8 @@ import org.apache.ratis.examples.filestore.FileStoreCommon;
 import org.apache.ratis.examples.filestore.FileStoreStateMachine;
 import org.apache.ratis.grpc.GrpcConfigKeys;
 import org.apache.ratis.metrics.JVMMetrics;
+import org.apache.ratis.metrics.MetricRegistries;
+import org.apache.ratis.metrics.MetricsReporting;
 import org.apache.ratis.netty.NettyConfigKeys;
 import org.apache.ratis.protocol.RaftGroup;
 import org.apache.ratis.protocol.RaftGroupId;
@@ -75,6 +77,9 @@ public class Server extends SubCommandBase {
   @Override
   public void run() throws Exception {
     JVMMetrics.initJvmMetrics(TimeDuration.valueOf(10, TimeUnit.SECONDS));
+
+    MetricRegistries.global().addReporterRegistration(MetricsReporting.jmxReporter(),
+        MetricsReporting.stopJmxReporter());
 
     RaftPeerId peerId = RaftPeerId.valueOf(id);
     RaftProperties properties = new RaftProperties();
