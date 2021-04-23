@@ -47,7 +47,7 @@ QUORUM_OPTS="--peers n0:localhost:6000:6001:6002:6003,n1:localhost:7000:7001:700
 
 CONF_DIR="$DIR/../conf"
 
-LOGGER_OPTS="-Dlog4j.configuration=file:${CONF_DIR}/n0-log4j.properties"
+export LOGGER_OPTS="-Dlog4j.configuration=file:${CONF_DIR}/n0-log4j.properties"
 
 $DIR/server.sh "$example" "$subcommand" --id n0 --storage "${tmp}/n0" $QUORUM_OPTS &
 
