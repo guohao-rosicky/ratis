@@ -101,6 +101,7 @@ public class FileStoreStateMachine extends BaseStateMachine {
         .thenApply(reply -> Message.valueOf(reply.toByteString()));
   }
 
+  // 在state machine 中 验证与预处理 请求体
   @Override
   public TransactionContext startTransaction(RaftClientRequest request) throws IOException {
     final ByteString content = request.getMessage().getContent();
@@ -123,6 +124,7 @@ public class FileStoreStateMachine extends BaseStateMachine {
     return b.build();
   }
 
+  // 将给定日志条目中的状态机数据异步写入此状态机
   @Override
   public CompletableFuture<Integer> write(LogEntryProto entry) {
     final StateMachineLogEntryProto smLog = entry.getStateMachineLogEntry();

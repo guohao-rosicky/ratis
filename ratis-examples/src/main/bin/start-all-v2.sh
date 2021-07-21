@@ -49,14 +49,14 @@ CONF_DIR="$DIR/../conf"
 
 export LOGGER_OPTS="-Dlog4j.configuration=file:${CONF_DIR}/n0-log4j.properties"
 
-$DIR/server.sh "$example" "$subcommand" --id n0 --storage "${tmp}/n0" $QUORUM_OPTS &
+$DIR/server.sh "$example" "$subcommand" --id n0 --storage "${tmp}/n0" $QUORUM_OPTS 1>/dev/null 2>&1 &
 
 LOGGER_OPTS="-Dlog4j.configuration=file:${CONF_DIR}/n1-log4j.properties"
 
-$DIR/server.sh "$example" "$subcommand" --id n1 --storage "${tmp}/n1" $QUORUM_OPTS &
+$DIR/server.sh "$example" "$subcommand" --id n1 --storage "${tmp}/n1" $QUORUM_OPTS 1>/dev/null 2>&1 &
 
 LOGGER_OPTS="-Dlog4j.configuration=file:${CONF_DIR}/n2-log4j.properties"
 
-$DIR/server.sh "$example" "$subcommand" --id n2 --storage "${tmp}/n2" $QUORUM_OPTS &
+$DIR/server.sh "$example" "$subcommand" --id n2 --storage "${tmp}/n2" $QUORUM_OPTS 1>/dev/null 2>&1 &
 
 echo "Waiting for the servers"
