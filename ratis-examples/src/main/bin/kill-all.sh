@@ -1,0 +1,1 @@
+ps aux | grep ratis | awk '{print $2}' | xargs kill -9

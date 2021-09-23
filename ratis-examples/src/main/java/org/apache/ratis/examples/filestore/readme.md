@@ -9,6 +9,20 @@ client.sh filestore loadgen --size 1048576 --numFiles 1 --storage /tmp/ratis/loa
 
 
 
+```
 
+
+title FileStore
+
+Client->Server: FileStoreRequestProto
+note right of Server: Bob thinks about it
+Server->Client: Authentication Response
+
+
+
+
+
+
+```
 
 
