@@ -117,7 +117,7 @@ public class SegmentedRaftLogOutputStream implements Closeable {
     try {
       out.flush();
     } catch (IOException ioe) {
-      throw new IOException("Failed to flush " + this, ioe);
+      throw new IOException("Failed to flush " + this + " for " + ioe.getMessage(), ioe);
     }
   }
 
