@@ -1291,7 +1291,8 @@ class RaftServerImpl implements RaftServer.Division,
     logAppendEntries(isHeartbeat,
         () -> getMemberId() + ": receive appendEntries(" + leaderId + ", " + leaderTerm + ", "
             + previous + ", " + leaderCommit + ", " + initializing
-            + ", commits" + ProtoUtils.toString(commitInfos)
+            + ", commits:" + ProtoUtils.toString(commitInfos)
+            + ", cId:" + callId
             + ", entries: " + LogProtoUtils.toLogEntriesString(entries));
 
     final long currentTerm;
@@ -1347,9 +1348,8 @@ class RaftServerImpl implements RaftServer.Division,
         : state.getLog().append(entries);
     commitInfos.forEach(commitInfoCache::update);
 
-    if (!isHeartbeat) {
-      CodeInjectionForTesting.execute(LOG_SYNC, getId(), null);
-    }
+    CodeInjectionForTesting.execute(LOG_SYNC, getId(), null);
+
     return JavaUtils.allOf(futures).whenCompleteAsync(
         (r, t) -> followerState.ifPresent(fs -> fs.updateLastRpcTime(FollowerState.UpdateType.APPEND_COMPLETE))
     ).thenApply(v -> {
