@@ -362,7 +362,7 @@ class SegmentedRaftLogWorker {
         }
         final Timer.Context logSyncTimerContext = raftLogSyncTimer.time();
         flushBatchSize = (int)(lastWrittenIndex - flushIndex.get());
-        out.flush();
+        //out.flush();
         logSyncTimerContext.stop();
         if (!stateMachineDataPolicy.isSync()) {
           IOUtils.getFromFuture(f, () -> this + "-flushStateMachineData");
