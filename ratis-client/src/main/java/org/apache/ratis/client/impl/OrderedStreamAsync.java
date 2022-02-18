@@ -24,6 +24,7 @@ import org.apache.ratis.datastream.impl.DataStreamPacketByteBuffer;
 import org.apache.ratis.datastream.impl.DataStreamRequestByteBuffer;
 import org.apache.ratis.datastream.impl.DataStreamRequestFilePositionCount;
 import org.apache.ratis.io.FilePositionCount;
+import org.apache.ratis.io.StandardWriteOption;
 import org.apache.ratis.protocol.DataStreamReply;
 import org.apache.ratis.protocol.DataStreamRequest;
 import org.apache.ratis.protocol.DataStreamRequestHeader;
@@ -107,6 +108,7 @@ public class OrderedStreamAsync {
 
   private final Semaphore requestSemaphore;
   private final TimeDuration requestTimeout;
+  private final TimeDuration closeTimeout;
   private final TimeoutScheduler scheduler = TimeoutScheduler.getInstance();
   private final Executor sendExecutor;
 
@@ -114,7 +116,7 @@ public class OrderedStreamAsync {
     this.dataStreamClientRpc = dataStreamClientRpc;
     this.requestSemaphore = new Semaphore(RaftClientConfigKeys.DataStream.outstandingRequestsMax(properties));
     this.requestTimeout = RaftClientConfigKeys.DataStream.requestTimeout(properties);
-
+    this.closeTimeout = requestTimeout.multiply(2);
     this.sendExecutor = ConcurrentUtils.newThreadPoolWithMax(false,
         RaftClientConfigKeys.DataStream.sendRequestWorker(properties), "stream-async-sender-");
   }
@@ -151,7 +153,8 @@ public class OrderedStreamAsync {
         request.getDataStreamRequest());
     long seqNum = request.getSeqNum();
 
-    scheduleWithTimeout(request);
+    final boolean isClose = StandardWriteOption.CLOSE.isOneOf(request.getDataStreamRequest().getWriteOptions());
+    scheduleWithTimeout(request, isClose? closeTimeout: requestTimeout);
 
     requestFuture.thenApplyAsync(reply -> {
       slidingWindow.receiveReply(
@@ -168,8 +171,8 @@ public class OrderedStreamAsync {
     });
   }
 
-  private void scheduleWithTimeout(DataStreamWindowRequest request) {
-    scheduler.onTimeout(requestTimeout, () -> {
+  private void scheduleWithTimeout(DataStreamWindowRequest request, TimeDuration timeout) {
+    scheduler.onTimeout(timeout, () -> {
       if (!request.getReplyFuture().isDone()) {
         request.getReplyFuture().completeExceptionally(
             new TimeoutIOException("Timeout " + requestTimeout + ": Failed to send " + request));
