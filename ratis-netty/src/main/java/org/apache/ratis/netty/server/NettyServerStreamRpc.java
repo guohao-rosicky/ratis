@@ -183,7 +183,7 @@ public class NettyServerStreamRpc implements DataStreamServerRpc {
 
   private ChannelInboundHandler newChannelInboundHandlerAdapter(){
     return new ChannelInboundHandlerAdapter(){
-      private final RequestRef requestRef = new RequestRef();
+      //private final RequestRef requestRef = new RequestRef();
 
       @Override
       public void channelRead(ChannelHandlerContext ctx, Object msg) {
@@ -192,19 +192,23 @@ public class NettyServerStreamRpc implements DataStreamServerRpc {
           return;
         }
 
-        final DataStreamRequestByteBuf request = requestRef.set((DataStreamRequestByteBuf)msg);
+        //final DataStreamRequestByteBuf request = requestRef.set((DataStreamRequestByteBuf)msg);
+        final DataStreamRequestByteBuf request = (DataStreamRequestByteBuf)msg;
 
         int index = Math.toIntExact(
             ((0xFFFFFFFFL & request.getClientId().hashCode()) + request.getStreamId()) % proxies.size());
         requests.read(request, ctx, proxies.get(index)::getDataStreamOutput);
 
-        requestRef.reset(request);
+        //requestRef.reset(request);
       }
 
       @Override
       public void exceptionCaught(ChannelHandlerContext ctx, Throwable throwable) {
-        Optional.ofNullable(requestRef.getAndSetNull())
-            .ifPresent(request -> requests.replyDataStreamException(throwable, request, ctx));
+        LOG.error(name + "has exceptionCaught: ", throwable);
+        ctx.close();
+
+//        Optional.ofNullable(requestRef.getAndSetNull())
+//            .ifPresent(request -> requests.replyDataStreamException(throwable, request, ctx));
       }
     };
   }

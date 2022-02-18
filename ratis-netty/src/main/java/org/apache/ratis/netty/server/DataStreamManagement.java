@@ -388,7 +388,9 @@ public class DataStreamManagement {
     } catch (Throwable t) {
       buf.release();
       removeDataStream(ClientInvocationId.valueOf(request.getClientId(), request.getStreamId()), null);
-      throw t;
+
+      replyDataStreamException(t, request, ctx);
+      //throw t;
     }
   }
 
