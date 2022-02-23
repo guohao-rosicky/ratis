@@ -25,6 +25,7 @@ import org.apache.ratis.datastream.impl.DataStreamReplyByteBuffer;
 import org.apache.ratis.netty.NettyConfigKeys;
 import org.apache.ratis.netty.NettyDataStreamUtils;
 import org.apache.ratis.netty.NettyUtils;
+import org.apache.ratis.netty.metrics.NettyServerMetrics;
 import org.apache.ratis.protocol.ClientId;
 import org.apache.ratis.protocol.RaftClientRequest;
 import org.apache.ratis.protocol.RaftPeer;
@@ -121,9 +122,14 @@ public class NettyServerStreamRpc implements DataStreamServerRpc {
   private final DataStreamManagement requests;
   private final List<Proxies> proxies = new ArrayList<>();
 
+  private final NettyServerMetrics nettyServerMetrics;
+
   public NettyServerStreamRpc(RaftServer server) {
     this.name = server.getId() + "-" + JavaUtils.getClassSimpleName(getClass());
-    this.requests = new DataStreamManagement(server);
+
+    nettyServerMetrics = new NettyServerMetrics(this.name);
+
+    this.requests = new DataStreamManagement(server, nettyServerMetrics);
 
     final RaftProperties properties = server.getProperties();
 
@@ -191,6 +197,7 @@ public class NettyServerStreamRpc implements DataStreamServerRpc {
 
       @Override
       public void channelRead(ChannelHandlerContext ctx, Object msg) {
+        nettyServerMetrics.onRequestCreate(NettyServerMetrics.INCOMING_REQUEST);
         if (!(msg instanceof DataStreamRequestByteBuf)) {
           LOG.error("Unexpected message class {}, ignoring ...", msg.getClass().getName());
           return;
