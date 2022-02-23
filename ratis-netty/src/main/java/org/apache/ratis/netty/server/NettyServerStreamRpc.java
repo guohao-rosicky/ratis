@@ -49,6 +49,7 @@ import org.apache.ratis.thirdparty.io.netty.handler.codec.ByteToMessageDecoder;
 import org.apache.ratis.thirdparty.io.netty.handler.codec.MessageToMessageEncoder;
 import org.apache.ratis.thirdparty.io.netty.handler.logging.LogLevel;
 import org.apache.ratis.thirdparty.io.netty.handler.logging.LoggingHandler;
+import org.apache.ratis.thirdparty.io.netty.handler.timeout.IdleStateHandler;
 import org.apache.ratis.util.JavaUtils;
 import org.apache.ratis.util.PeerProxyMap;
 import org.apache.ratis.util.Preconditions;
@@ -221,6 +222,7 @@ public class NettyServerStreamRpc implements DataStreamServerRpc {
       @Override
       public void initChannel(SocketChannel ch) {
         ChannelPipeline p = ch.pipeline();
+        p.addLast(new IdleStateHandler(0, 0, 12000, TimeUnit.MILLISECONDS));
         p.addLast(newDecoder());
         p.addLast(newEncoder());
         p.addLast(newChannelInboundHandlerAdapter());
