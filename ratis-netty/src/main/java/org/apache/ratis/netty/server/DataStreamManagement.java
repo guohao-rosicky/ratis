@@ -21,6 +21,7 @@ package org.apache.ratis.netty.server;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import org.apache.ratis.client.AsyncRpcApi;
 import org.apache.ratis.client.DataStreamOutputRpc;
+import org.apache.ratis.client.RaftClientConfigKeys;
 import org.apache.ratis.client.impl.ClientProtoUtils;
 import org.apache.ratis.conf.RaftProperties;
 import org.apache.ratis.datastream.impl.DataStreamReplyByteBuffer;
@@ -40,6 +41,7 @@ import org.apache.ratis.protocol.RaftPeerId;
 import org.apache.ratis.protocol.RoutingTable;
 import org.apache.ratis.protocol.exceptions.AlreadyExistsException;
 import org.apache.ratis.protocol.exceptions.DataStreamException;
+import org.apache.ratis.protocol.exceptions.TimeoutIOException;
 import org.apache.ratis.server.RaftConfiguration;
 import org.apache.ratis.server.RaftServer;
 import org.apache.ratis.server.RaftServer.Division;
@@ -52,6 +54,8 @@ import org.apache.ratis.util.ConcurrentUtils;
 import org.apache.ratis.util.JavaUtils;
 import org.apache.ratis.util.MemoizedSupplier;
 import org.apache.ratis.util.Preconditions;
+import org.apache.ratis.util.TimeDuration;
+import org.apache.ratis.util.TimeoutScheduler;
 import org.apache.ratis.util.function.CheckedBiFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -68,6 +72,7 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -211,6 +216,8 @@ public class DataStreamManagement {
 
   private final boolean startTransactionEnable;
 
+  private final TimeDuration requestTimeout;
+
   DataStreamManagement(RaftServer server) {
     this.server = server;
     this.name = server.getId() + "-" + JavaUtils.getClassSimpleName(getClass());
@@ -224,6 +231,9 @@ public class DataStreamManagement {
           RaftServerConfigKeys.DataStream.asyncWriteThreadPoolSize(properties),
           name + "-write-");
     this.startTransactionEnable = RaftServerConfigKeys.DataStream.raftLogNeed(properties);
+
+    this.requestTimeout =
+        RaftClientConfigKeys.DataStream.requestTimeout(properties);
   }
 
   private CompletableFuture<DataStream> computeDataStreamIfAbsent(RaftClientRequest request) throws IOException {
@@ -261,8 +271,26 @@ public class DataStreamManagement {
 
   static CompletableFuture<Long> writeToAsync(ByteBuf buf, WriteOption[] options, DataStream stream,
       Executor defaultExecutor) {
-    final Executor e = Optional.ofNullable(stream.getExecutor()).orElse(defaultExecutor);
-    return CompletableFuture.supplyAsync(() -> writeTo(buf, options, stream), e);
+//    final Executor e = Optional.ofNullable(stream.getExecutor()).orElse(defaultExecutor);
+//    return CompletableFuture.supplyAsync(() -> writeTo(buf, options, stream), e);
+
+    final Executor e =
+        Optional.ofNullable(stream.getExecutor()).orElse(defaultExecutor);
+
+    long l = System.currentTimeMillis();
+    CompletableFuture<Long> future =
+        CompletableFuture.supplyAsync(() -> writeTo(buf, options, stream), e);
+
+    TimeoutScheduler.getInstance()
+        .onTimeout(TimeDuration.valueOf(10, TimeUnit.SECONDS), () -> {
+          if (!future.isDone()) {
+            future.completeExceptionally(
+                new TimeoutIOException("Timeout " + (System.currentTimeMillis() - l) + "ms: Failed to write")
+            );
+          }
+        }, LOG, () -> "Failed to completeExceptionally for local write");
+
+    return future;
   }
 
   static long writeTo(ByteBuf buf, WriteOption[] options, DataStream stream) {
