@@ -240,6 +240,15 @@ public class NettyServerStreamRpc implements DataStreamServerRpc {
       protected void decode(ChannelHandlerContext context, ByteBuf buf, List<Object> out) {
         Optional.ofNullable(NettyDataStreamUtils.decodeDataStreamRequestByteBuf(buf)).ifPresent(out::add);
       }
+
+
+      @Override
+      public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause)
+          throws Exception {
+        LOG.error("server newDecoder exceptionCaught:", cause);
+        ctx.close();
+        //super.exceptionCaught(ctx, cause);
+      }
     };
   }
 
@@ -248,6 +257,14 @@ public class NettyServerStreamRpc implements DataStreamServerRpc {
       @Override
       protected void encode(ChannelHandlerContext context, DataStreamReplyByteBuffer reply, List<Object> out) {
         NettyDataStreamUtils.encodeDataStreamReplyByteBuffer(reply, out::add, context.alloc());
+      }
+
+      @Override
+      public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause)
+          throws Exception {
+        LOG.error("server newEncoder exceptionCaught:", cause);
+        ctx.close();
+        //super.exceptionCaught(ctx, cause);
       }
     };
   }
