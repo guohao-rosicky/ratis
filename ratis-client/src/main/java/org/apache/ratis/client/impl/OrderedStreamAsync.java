@@ -110,15 +110,15 @@ public class OrderedStreamAsync {
   private final TimeDuration requestTimeout;
   private final TimeDuration closeTimeout;
   private final TimeoutScheduler scheduler = TimeoutScheduler.getInstance();
-  private final Executor sendExecutor;
+//  private final Executor sendExecutor;
 
   OrderedStreamAsync(DataStreamClientRpc dataStreamClientRpc, RaftProperties properties){
     this.dataStreamClientRpc = dataStreamClientRpc;
     this.requestSemaphore = new Semaphore(RaftClientConfigKeys.DataStream.outstandingRequestsMax(properties));
     this.requestTimeout = RaftClientConfigKeys.DataStream.requestTimeout(properties);
     this.closeTimeout = requestTimeout.multiply(2);
-    this.sendExecutor = ConcurrentUtils.newThreadPoolWithMax(false,
-        RaftClientConfigKeys.DataStream.sendRequestWorker(properties), "stream-async-sender-");
+//    this.sendExecutor = ConcurrentUtils.newThreadPoolWithMax(false,
+//        RaftClientConfigKeys.DataStream.sendRequestWorker(properties), "stream-async-sender-");
   }
 
   CompletableFuture<DataStreamReply> sendRequest(DataStreamRequestHeader header, Object data,
@@ -156,16 +156,16 @@ public class OrderedStreamAsync {
     final boolean isClose = StandardWriteOption.CLOSE.isOneOf(request.getDataStreamRequest().getWriteOptions());
     scheduleWithTimeout(request, isClose? closeTimeout: requestTimeout);
 
-    requestFuture.thenApplyAsync(reply -> {
+    requestFuture.thenApply(reply -> {
       slidingWindow.receiveReply(
           seqNum, reply, r -> sendRequestToNetwork(r, slidingWindow));
       return reply;
-    }, sendExecutor).thenAcceptAsync(reply -> {
+    }).thenAccept(reply -> {
       if (f.isDone()) {
         return;
       }
       f.complete(reply);
-    }, sendExecutor).exceptionally(e -> {
+    }).exceptionally(e -> {
       f.completeExceptionally(e);
       return null;
     });
