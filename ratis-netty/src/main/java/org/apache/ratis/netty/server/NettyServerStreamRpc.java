@@ -65,6 +65,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -153,6 +155,8 @@ public class NettyServerStreamRpc implements DataStreamServerRpc {
         .childHandler(getInitializer())
         .childOption(ChannelOption.SO_KEEPALIVE, true)
         .childOption(ChannelOption.TCP_NODELAY, true)
+        .childOption(ChannelOption.CONNECT_TIMEOUT_MILLIS, 1000)
+        .childOption(ChannelOption.SO_TIMEOUT, 1000)
         .bind(port);
   }
 
@@ -192,6 +196,9 @@ public class NettyServerStreamRpc implements DataStreamServerRpc {
   }
 
   private ChannelInboundHandler newChannelInboundHandlerAdapter(){
+
+
+
     return new ChannelInboundHandlerAdapter(){
       //private final RequestRef requestRef = new RequestRef();
 
@@ -217,7 +224,6 @@ public class NettyServerStreamRpc implements DataStreamServerRpc {
       public void exceptionCaught(ChannelHandlerContext ctx, Throwable throwable) {
         LOG.error(name + "has exceptionCaught: ", throwable);
         ctx.close();
-
 //        Optional.ofNullable(requestRef.getAndSetNull())
 //            .ifPresent(request -> requests.replyDataStreamException(throwable, request, ctx));
       }

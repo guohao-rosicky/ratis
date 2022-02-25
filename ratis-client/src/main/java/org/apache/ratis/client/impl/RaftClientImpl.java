@@ -226,6 +226,17 @@ public final class RaftClientImpl implements RaftClient {
     final RaftClientRequest.Builder b = RaftClientRequest.newBuilder();
     if (server != null) {
       b.setServerId(server);
+    } else if (leaderId == null) {
+      final RaftPeerId cached = LEADER_CACHE.getIfPresent(groupId);
+      if (cached != null && this.peers.iterator().hasNext()) {
+        for (RaftPeer peer : this.peers) {
+          if (peer.getId() == cached) {
+            server = cached;
+            break;
+          }
+        }
+      }
+      b.setServerId(server != null ? server : getHighestPriorityPeerId());
     } else {
       b.setLeaderId(leaderId);
     }

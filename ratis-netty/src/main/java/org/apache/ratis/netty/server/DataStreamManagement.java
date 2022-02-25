@@ -323,7 +323,8 @@ public class DataStreamManagement {
       final RaftClientRequest request = ClientProtoUtils.toRaftClientRequest(
           RaftClientRequestProto.parseFrom(buf.nioBuffer()));
       final boolean isPrimary = server.getId().equals(request.getServerId());
-      return new StreamInfo(request, isPrimary, computeDataStreamIfAbsent(request), server, getStreams, metrics);
+      final Division division = server.getDivision(request.getRaftGroupId());
+      return new StreamInfo(request, isPrimary, computeDataStreamIfAbsent(request), division, getStreams, metrics);
     } catch (Throwable e) {
       throw new CompletionException(e);
     }
@@ -422,8 +423,6 @@ public class DataStreamManagement {
   private CompletableFuture<RaftClientReply> startTransaction(StreamInfo info, DataStreamRequestByteBuf request,
       long bytesWritten, ChannelHandlerContext ctx) {
     try {
-
-
       Timer.Context timer = getNettyServerMetrics()
           .getNettyRpcLatencyTimer(NettyServerMetrics.START_TRANSACTION_REQUEST).time();
 
