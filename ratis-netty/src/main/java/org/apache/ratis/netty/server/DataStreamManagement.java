@@ -49,6 +49,7 @@ import org.apache.ratis.server.RaftServerConfigKeys;
 import org.apache.ratis.statemachine.StateMachine.DataStream;
 import org.apache.ratis.statemachine.StateMachine.DataChannel;
 import org.apache.ratis.thirdparty.io.netty.buffer.ByteBuf;
+import org.apache.ratis.thirdparty.io.netty.channel.ChannelFutureListener;
 import org.apache.ratis.thirdparty.io.netty.channel.ChannelHandlerContext;
 import org.apache.ratis.util.ConcurrentUtils;
 import org.apache.ratis.util.JavaUtils;
@@ -218,6 +219,13 @@ public class DataStreamManagement {
 
   private final TimeDuration requestTimeout;
 
+  private static final ChannelFutureListener replyListener = future -> {
+    if (!future.isSuccess()) {
+      LOG.error("Netty server reply response error:", future.cause());
+      future.channel().close();
+    }
+  };
+
   DataStreamManagement(RaftServer server) {
     this.server = server;
     this.name = server.getId() + "-" + JavaUtils.getClassSimpleName(getClass());
@@ -349,7 +357,7 @@ public class DataStreamManagement {
     if (success) {
       builder.setBytesWritten(bytesWritten);
     }
-    ctx.writeAndFlush(builder.build());
+    ctx.writeAndFlush(builder.build()).addListener(replyListener);
   }
 
   private CompletableFuture<RaftClientReply> startTransaction(StreamInfo info, DataStreamRequestByteBuf request,
@@ -358,7 +366,7 @@ public class DataStreamManagement {
       if (!startTransactionEnable) {
         RaftClientReply reply = RaftClientReply.newBuilder()
             .setRequest(info.getRequest()).setSuccess(true).build();
-        ctx.writeAndFlush(newDataStreamReplyByteBuffer(request, reply, bytesWritten, info.getCommitInfos()));
+        ctx.writeAndFlush(newDataStreamReplyByteBuffer(request, reply, bytesWritten, info.getCommitInfos())).addListener(replyListener);
         return null;
       }
 
@@ -370,7 +378,7 @@ public class DataStreamManagement {
         if (e != null) {
           replyDataStreamException(server, e, info.getRequest(), request, ctx);
         } else {
-          ctx.writeAndFlush(newDataStreamReplyByteBuffer(request, reply, bytesWritten, info.getCommitInfos()));
+          ctx.writeAndFlush(newDataStreamReplyByteBuffer(request, reply, bytesWritten, info.getCommitInfos())).addListener(replyListener);
         }
       }, requestExecutor);
     } catch (IOException e) {
@@ -401,7 +409,7 @@ public class DataStreamManagement {
       ChannelHandlerContext ctx) {
     LOG.warn("Failed to process {}",  request, throwable);
     try {
-      ctx.writeAndFlush(newDataStreamReplyByteBuffer(request, reply, 0, null));
+      ctx.writeAndFlush(newDataStreamReplyByteBuffer(request, reply, 0, null)).addListener(replyListener);
     } catch (Throwable t) {
       LOG.warn("Failed to sendDataStreamException {} for {}", throwable, request, t);
     }

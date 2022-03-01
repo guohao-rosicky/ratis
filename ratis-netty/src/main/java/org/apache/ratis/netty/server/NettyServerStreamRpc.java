@@ -151,6 +151,7 @@ public class NettyServerStreamRpc implements DataStreamServerRpc {
         .childOption(ChannelOption.TCP_NODELAY, true)
         .childOption(ChannelOption.CONNECT_TIMEOUT_MILLIS, 1000)
         .childOption(ChannelOption.SO_TIMEOUT, 1000)
+        .childOption(ChannelOption.SO_BACKLOG, 5120)
         .bind(port);
   }
 
@@ -244,7 +245,13 @@ public class NettyServerStreamRpc implements DataStreamServerRpc {
 
       @Override
       protected void decode(ChannelHandlerContext context, ByteBuf buf, List<Object> out) {
-        Optional.ofNullable(NettyDataStreamUtils.decodeDataStreamRequestByteBuf(buf)).ifPresent(out::add);
+        try {
+          Optional.ofNullable(NettyDataStreamUtils.decodeDataStreamRequestByteBuf(buf)).ifPresent(out::add);
+        } catch (Exception e) {
+          LOG.error("server newDecoder error:", e);
+          context.close();
+          throw e;
+        }
       }
 
 
@@ -261,8 +268,15 @@ public class NettyServerStreamRpc implements DataStreamServerRpc {
   static MessageToMessageEncoder<DataStreamReplyByteBuffer> newEncoder() {
     return new MessageToMessageEncoder<DataStreamReplyByteBuffer>() {
       @Override
-      protected void encode(ChannelHandlerContext context, DataStreamReplyByteBuffer reply, List<Object> out) {
-        NettyDataStreamUtils.encodeDataStreamReplyByteBuffer(reply, out::add, context.alloc());
+      protected void encode(ChannelHandlerContext context,
+                            DataStreamReplyByteBuffer reply, List<Object> out) {
+        try {
+          NettyDataStreamUtils.encodeDataStreamReplyByteBuffer(reply, out::add, context.alloc());
+        } catch (Exception e) {
+          LOG.error("server newEncoder error:", e);
+          context.close();
+          throw e;
+        }
       }
 
       @Override

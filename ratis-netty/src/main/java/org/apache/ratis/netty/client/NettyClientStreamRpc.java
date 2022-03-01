@@ -131,6 +131,13 @@ public class NettyClientStreamRpc implements DataStreamClientRpc {
   private final TimeDuration replyQueueGracePeriod;
   private final TimeoutScheduler timeoutScheduler = TimeoutScheduler.getInstance();
 
+  private final ChannelFutureListener sendListener = future -> {
+    if (!future.isSuccess()) {
+      LOG.error("Netty client send request error:", future.cause());
+      future.channel().close();
+    }
+  };
+
   public NettyClientStreamRpc(RaftPeer server, RaftProperties properties){
     this.name = JavaUtils.getClassSimpleName(getClass()) + "->" + server;
     this.workerGroup = new WorkerGroupGetter(properties);
@@ -221,8 +228,14 @@ public class NettyClientStreamRpc implements DataStreamClientRpc {
   MessageToMessageEncoder<DataStreamRequestByteBuffer> newEncoder() {
     return new MessageToMessageEncoder<DataStreamRequestByteBuffer>() {
       @Override
-      protected void encode(ChannelHandlerContext context, DataStreamRequestByteBuffer request, List<Object> out) {
-        NettyDataStreamUtils.encodeDataStreamRequestByteBuffer(request, out::add, context.alloc());
+      protected void encode(ChannelHandlerContext context, DataStreamRequestByteBuffer request, List<Object> out) throws Exception{
+        try {
+          NettyDataStreamUtils.encodeDataStreamRequestByteBuffer(request, out::add, context.alloc());
+        } catch (Exception e) {
+          LOG.error("client newEncoder error:", e);
+          context.close();
+          throw e;
+        }
       }
 
       @Override
@@ -238,8 +251,22 @@ public class NettyClientStreamRpc implements DataStreamClientRpc {
   MessageToMessageEncoder<DataStreamRequestFilePositionCount> newEncoderDataStreamRequestFilePositionCount() {
     return new MessageToMessageEncoder<DataStreamRequestFilePositionCount>() {
       @Override
-      protected void encode(ChannelHandlerContext ctx, DataStreamRequestFilePositionCount request, List<Object> out) {
-        NettyDataStreamUtils.encodeDataStreamRequestFilePositionCount(request, out::add, ctx.alloc());
+      public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause)
+          throws Exception {
+        LOG.error("client newEncoderDataStreamRequestFilePositionCount exceptionCaught:", cause);
+        ctx.close();
+        //super.exceptionCaught(ctx, cause);
+      }
+
+      @Override
+      protected void encode(ChannelHandlerContext ctx, DataStreamRequestFilePositionCount request, List<Object> out) throws Exception{
+        try {
+          NettyDataStreamUtils.encodeDataStreamRequestFilePositionCount(request, out::add, ctx.alloc());
+        } catch (Exception e) {
+          LOG.error("client newEncoderDataStreamRequestFilePositionCount error:", e);
+          ctx.close();
+          throw e;
+        }
       }
     };
   }
@@ -251,8 +278,14 @@ public class NettyClientStreamRpc implements DataStreamClientRpc {
       }
 
       @Override
-      protected void decode(ChannelHandlerContext context, ByteBuf buf, List<Object> out) {
-        Optional.ofNullable(NettyDataStreamUtils.decodeDataStreamReplyByteBuffer(buf)).ifPresent(out::add);
+      protected void decode(ChannelHandlerContext context, ByteBuf buf, List<Object> out) throws Exception{
+        try {
+          Optional.ofNullable(NettyDataStreamUtils.decodeDataStreamReplyByteBuffer(buf)).ifPresent(out::add);
+        } catch (Exception e) {
+          LOG.error("client newDecoder error:", e);
+          context.close();
+          throw e;
+        }
       }
 
       @Override
@@ -275,7 +308,7 @@ public class NettyClientStreamRpc implements DataStreamClientRpc {
       return f;
     }
     LOG.debug("{}: write {}", this, request);
-    getChannel().writeAndFlush(request);
+    getChannel().writeAndFlush(request).addListener(sendListener);
     return f;
   }
 
