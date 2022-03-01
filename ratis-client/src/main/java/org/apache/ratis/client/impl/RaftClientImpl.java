@@ -236,7 +236,11 @@ public final class RaftClientImpl implements RaftClient {
           }
         }
       }
-      b.setServerId(server != null ? server : getHighestPriorityPeerId());
+      server = server != null ? server : getHighestPriorityPeerId();
+      b.setServerId(server);
+
+      LOG.error("leader is null, reset server id " + server);
+
     } else {
       b.setLeaderId(leaderId);
     }
