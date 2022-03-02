@@ -357,7 +357,13 @@ public class DataStreamManagement {
     if (success) {
       builder.setBytesWritten(bytesWritten);
     }
-    ctx.writeAndFlush(builder.build()).addListener(replyListener);
+    if (ctx.channel().isWritable()) {
+      ctx.writeAndFlush(builder.build()).addListener(replyListener);
+
+//      if (!success) {
+//        ctx.close();
+//      }
+    }
   }
 
   private CompletableFuture<RaftClientReply> startTransaction(StreamInfo info, DataStreamRequestByteBuf request,
@@ -366,7 +372,9 @@ public class DataStreamManagement {
       if (!startTransactionEnable) {
         RaftClientReply reply = RaftClientReply.newBuilder()
             .setRequest(info.getRequest()).setSuccess(true).build();
-        ctx.writeAndFlush(newDataStreamReplyByteBuffer(request, reply, bytesWritten, info.getCommitInfos())).addListener(replyListener);
+        if (ctx.channel().isWritable()) {
+          ctx.writeAndFlush(newDataStreamReplyByteBuffer(request, reply, bytesWritten, info.getCommitInfos())).addListener(replyListener);
+        }
         return null;
       }
 
@@ -378,7 +386,9 @@ public class DataStreamManagement {
         if (e != null) {
           replyDataStreamException(server, e, info.getRequest(), request, ctx);
         } else {
-          ctx.writeAndFlush(newDataStreamReplyByteBuffer(request, reply, bytesWritten, info.getCommitInfos())).addListener(replyListener);
+          if (ctx.channel().isWritable()) {
+            ctx.writeAndFlush(newDataStreamReplyByteBuffer(request, reply, bytesWritten, info.getCommitInfos())).addListener(replyListener);
+          }
         }
       }, requestExecutor);
     } catch (IOException e) {
@@ -409,7 +419,9 @@ public class DataStreamManagement {
       ChannelHandlerContext ctx) {
     LOG.warn("Failed to process {}",  request, throwable);
     try {
-      ctx.writeAndFlush(newDataStreamReplyByteBuffer(request, reply, 0, null)).addListener(replyListener);
+      if (ctx.channel().isWritable()) {
+        ctx.writeAndFlush(newDataStreamReplyByteBuffer(request, reply, 0, null)).addListener(replyListener);
+      }
     } catch (Throwable t) {
       LOG.warn("Failed to sendDataStreamException {} for {}", throwable, request, t);
     }
@@ -511,18 +523,26 @@ public class DataStreamManagement {
   static boolean checkSuccessRemoteWrite(List<CompletableFuture<DataStreamReply>> replyFutures, long bytesWritten,
       final DataStreamRequestByteBuf request) {
     for (CompletableFuture<DataStreamReply> replyFuture : replyFutures) {
-      final DataStreamReply reply = replyFuture.join();
-      assertReplyCorrespondingToRequest(request, reply);
-      if (!reply.isSuccess()) {
-        LOG.warn("reply is not success, request: {}", request);
+
+
+      try {
+        final DataStreamReply reply = replyFuture.join();
+        assertReplyCorrespondingToRequest(request, reply);
+        if (!reply.isSuccess()) {
+          LOG.warn("reply is not success, request: {}", request);
+          return false;
+        }
+        if (reply.getBytesWritten() != bytesWritten) {
+          LOG.warn(
+              "reply written bytes not match, local size: {} remote size: {} request: {}",
+              bytesWritten, reply.getBytesWritten(), request);
+          return false;
+        }
+      } catch (Throwable e) {
+        LOG.warn("reply get error, local size: {} request: {}", bytesWritten, request, e);
         return false;
       }
-      if (reply.getBytesWritten() != bytesWritten) {
-        LOG.warn(
-            "reply written bytes not match, local size: {} remote size: {} request: {}",
-            bytesWritten, reply.getBytesWritten(), request);
-        return false;
-      }
+
     }
     return true;
   }

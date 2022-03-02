@@ -156,12 +156,18 @@ public class NettyClientStreamRpc implements DataStreamClientRpc {
   }
 
   private ChannelInboundHandler getClientHandler(){
-    return new ChannelInboundHandlerAdapter(){
+    return new SimpleChannelInboundHandler() {
 
       //private ClientInvocationId clientInvocationId;
 
       @Override
-      public void channelRead(ChannelHandlerContext ctx, Object msg) {
+      public void channelActive(ChannelHandlerContext ctx) throws Exception {
+        super.channelActive(ctx);
+        LOG.info("client connected {}", ctx.channel().remoteAddress());
+      }
+
+      @Override
+      public void channelRead0(ChannelHandlerContext ctx, Object msg) {
         if (!(msg instanceof DataStreamReply)) {
           LOG.error("{}: unexpected message {}", this, msg.getClass());
           return;
@@ -308,7 +314,13 @@ public class NettyClientStreamRpc implements DataStreamClientRpc {
       return f;
     }
     LOG.debug("{}: write {}", this, request);
-    getChannel().writeAndFlush(request).addListener(sendListener);
+
+    if (getChannel().isWritable()) {
+      getChannel().writeAndFlush(request).addListener(sendListener);
+    } else {
+      f.completeExceptionally(new IllegalStateException(this + ": Netty channel is close Failed to send request for " + request));
+    }
+
     return f;
   }
 

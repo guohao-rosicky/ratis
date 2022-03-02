@@ -36,11 +36,11 @@ import org.apache.ratis.thirdparty.io.netty.buffer.ByteBuf;
 import org.apache.ratis.thirdparty.io.netty.channel.ChannelFuture;
 import org.apache.ratis.thirdparty.io.netty.channel.ChannelHandlerContext;
 import org.apache.ratis.thirdparty.io.netty.channel.ChannelInboundHandler;
-import org.apache.ratis.thirdparty.io.netty.channel.ChannelInboundHandlerAdapter;
 import org.apache.ratis.thirdparty.io.netty.channel.ChannelInitializer;
 import org.apache.ratis.thirdparty.io.netty.channel.ChannelOption;
 import org.apache.ratis.thirdparty.io.netty.channel.ChannelPipeline;
 import org.apache.ratis.thirdparty.io.netty.channel.EventLoopGroup;
+import org.apache.ratis.thirdparty.io.netty.channel.SimpleChannelInboundHandler;
 import org.apache.ratis.thirdparty.io.netty.channel.epoll.EpollEventLoopGroup;
 import org.apache.ratis.thirdparty.io.netty.channel.epoll.EpollServerSocketChannel;
 import org.apache.ratis.thirdparty.io.netty.channel.socket.SocketChannel;
@@ -60,12 +60,11 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -104,8 +103,23 @@ public class NettyServerStreamRpc implements DataStreamServerRpc {
           outs.add((DataStreamOutputRpc) client.stream(request));
         } catch (Exception e) {
           map.handleException(peer.getId(), e, true);
-          throw new IOException(
-              map.getName() + ": Failed to getDataStreamOutput for " + peer, e);
+
+          if (e instanceof NullPointerException) {
+            try {
+              addPeers(Collections.singleton(peer));
+              DataStreamClient client = map.getProxy(peer.getId());
+              outs.add((DataStreamOutputRpc) client.stream(request));
+            } catch (Throwable ee) {
+              throw new IOException(
+                  map.getName() +
+                      ": Failed to getDataStreamOutput(retry) for " + peer, ee);
+            }
+          } else {
+            throw new IOException(
+                map.getName() + ": Failed to getDataStreamOutput for " + peer,
+                e);
+          }
+
         }
       }
     }
@@ -192,15 +206,20 @@ public class NettyServerStreamRpc implements DataStreamServerRpc {
 
   private ChannelInboundHandler newChannelInboundHandlerAdapter(){
 
-
-
-    return new ChannelInboundHandlerAdapter(){
+    return new SimpleChannelInboundHandler(){
       //private final RequestRef requestRef = new RequestRef();
 
       @Override
-      public void channelRead(ChannelHandlerContext ctx, Object msg) {
+      public void channelActive(ChannelHandlerContext ctx) throws Exception {
+        super.channelActive(ctx);
+        LOG.info("server connect the client {}", ctx.channel().remoteAddress());
+      }
+
+      @Override
+      public void channelRead0(ChannelHandlerContext ctx, Object msg) {
         if (!(msg instanceof DataStreamRequestByteBuf)) {
           LOG.error("Unexpected message class {}, ignoring ...", msg.getClass().getName());
+          ctx.close();
           return;
         }
 

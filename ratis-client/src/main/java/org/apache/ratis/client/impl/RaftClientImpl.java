@@ -224,13 +224,17 @@ public final class RaftClientImpl implements RaftClient {
       RaftPeerId server, long callId, Message message, RaftClientRequest.Type type,
       SlidingWindowEntry slidingWindowEntry) {
     final RaftClientRequest.Builder b = RaftClientRequest.newBuilder();
-    if (server != null) {
+
+    if (type.equals(RaftClientRequest.forwardRequestType()) && leaderId != null) {
+      b.setLeaderId(leaderId);
+      LOG.info("forward request change server id {} to {} ", server, leaderId);
+    } else if (server != null) {
       b.setServerId(server);
     } else if (leaderId == null) {
       final RaftPeerId cached = LEADER_CACHE.getIfPresent(groupId);
       if (cached != null && this.peers.iterator().hasNext()) {
         for (RaftPeer peer : this.peers) {
-          if (peer.getId() == cached) {
+          if (peer.getId().equals(cached)) {
             server = cached;
             break;
           }
@@ -239,7 +243,7 @@ public final class RaftClientImpl implements RaftClient {
       server = server != null ? server : getHighestPriorityPeerId();
       b.setServerId(server);
 
-      LOG.error("leader is null, reset server id " + server);
+      LOG.info("leader is null, reset server id " + server);
 
     } else {
       b.setLeaderId(leaderId);
