@@ -21,6 +21,7 @@ package org.apache.ratis.netty.server;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import org.apache.ratis.client.AsyncRpcApi;
 import org.apache.ratis.client.DataStreamOutputRpc;
+import org.apache.ratis.client.RaftClientConfigKeys;
 import org.apache.ratis.client.impl.ClientProtoUtils;
 import org.apache.ratis.conf.RaftProperties;
 import org.apache.ratis.datastream.impl.DataStreamReplyByteBuffer;
@@ -56,6 +57,7 @@ import org.apache.ratis.util.ConcurrentUtils;
 import org.apache.ratis.util.JavaUtils;
 import org.apache.ratis.util.MemoizedSupplier;
 import org.apache.ratis.util.Preconditions;
+import org.apache.ratis.util.TimeDuration;
 import org.apache.ratis.util.function.CheckedBiFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -72,6 +74,7 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -230,6 +233,9 @@ public class DataStreamManagement {
 
   private final NettyServerStreamRpcMetrics nettyServerStreamRpcMetrics;
 
+  private final long requestTimeout;
+  private final TimeUnit requestTimeoutUnit;
+
   DataStreamManagement(RaftServer server, NettyServerStreamRpcMetrics metrics) {
     this.server = server;
     this.name = server.getId() + "-" + JavaUtils.getClassSimpleName(getClass());
@@ -244,6 +250,10 @@ public class DataStreamManagement {
           name + "-write-");
 
     this.nettyServerStreamRpcMetrics = metrics;
+
+    this.requestTimeoutUnit = RaftClientConfigKeys.DataStream.requestTimeout(properties).getUnit();
+    this.requestTimeout = RaftClientConfigKeys.DataStream.requestTimeout(properties).multiply(2)
+            .toLong(requestTimeoutUnit);
   }
 
   private CompletableFuture<DataStream> computeDataStreamIfAbsent(RaftClientRequest request) throws IOException {
@@ -405,14 +415,16 @@ public class DataStreamManagement {
     LOG.debug("{}: read {}", this, request);
     final ByteBuf buf = request.slice();
     try {
-      readImpl(request, ctx, buf, getStreams);
+      readImpl(request, ctx, buf, getStreams).get(requestTimeout, requestTimeoutUnit);
     } catch (Throwable t) {
       buf.release();
-      throw t;
+
+      replyDataStreamException(t, request, ctx);
+      //throw t;
     }
   }
 
-  private void readImpl(DataStreamRequestByteBuf request, ChannelHandlerContext ctx, ByteBuf buf,
+  private CompletableFuture<Void>  readImpl(DataStreamRequestByteBuf request, ChannelHandlerContext ctx, ByteBuf buf,
       CheckedBiFunction<RaftClientRequest, Set<RaftPeer>, Set<DataStreamOutputRpc>, IOException> getStreams) {
     boolean close = WriteOption.containsOption(request.getWriteOptions(), StandardWriteOption.CLOSE);
     ClientInvocationId key =  ClientInvocationId.valueOf(request.getClientId(), request.getStreamId());
@@ -449,7 +461,7 @@ public class DataStreamManagement {
       throw new IllegalStateException(this + ": Unexpected type " + request.getType() + ", request=" + request);
     }
 
-    composeAsync(info.getPrevious(), requestExecutor, n -> JavaUtils.allOf(remoteWrites)
+    return composeAsync(info.getPrevious(), requestExecutor, n -> JavaUtils.allOf(remoteWrites)
         .thenCombineAsync(localWrite, (v, bytesWritten) -> {
           if (request.getType() == Type.STREAM_HEADER
               || (request.getType() == Type.STREAM_DATA && !close)) {

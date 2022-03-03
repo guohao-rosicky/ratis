@@ -153,47 +153,52 @@ public class NettyClientStreamRpc implements DataStreamClientRpc {
 
       @Override
       public void channelRead(ChannelHandlerContext ctx, Object msg) {
-        if (!(msg instanceof DataStreamReply)) {
-          LOG.error("{}: unexpected message {}", this, msg.getClass());
-          return;
-        }
-        final DataStreamReply reply = (DataStreamReply) msg;
-        LOG.debug("{}: read {}", this, reply);
-        clientInvocationId = ClientInvocationId.valueOf(reply.getClientId(), reply.getStreamId());
-        final ReplyQueue queue = reply.isSuccess() ? replies.get(clientInvocationId) :
-                replies.remove(clientInvocationId);
-        if (queue != null) {
-          final CompletableFuture<DataStreamReply> f = queue.poll();
-          if (f != null) {
-            f.complete(reply);
 
-            if (!reply.isSuccess() && queue.size() > 0) {
-              final IllegalStateException e = new IllegalStateException(
-                  this + ": an earlier request failed with " + reply);
-              queue.forEach(future -> future.completeExceptionally(e));
+        ctx.channel().eventLoop().execute(() -> {
+
+          try {
+            if (!(msg instanceof DataStreamReply)) {
+              LOG.error("{}: unexpected message {}", this, msg.getClass());
+              return;
+            }
+            final DataStreamReply reply = (DataStreamReply) msg;
+            LOG.debug("{}: read {}", this, reply);
+            clientInvocationId = ClientInvocationId.valueOf(reply.getClientId(), reply.getStreamId());
+            final ReplyQueue queue = reply.isSuccess() ? replies.get(clientInvocationId) :
+                    replies.remove(clientInvocationId);
+            if (queue != null) {
+              final CompletableFuture<DataStreamReply> f = queue.poll();
+              if (f != null) {
+                f.complete(reply);
+
+                if (!reply.isSuccess() && queue.size() > 0) {
+                  final IllegalStateException e = new IllegalStateException(
+                      this + ": an earlier request failed with " + reply);
+                  queue.forEach(future -> future.completeExceptionally(e));
+                }
+
+                final Integer emptyId = queue.getEmptyId();
+                if (emptyId != null) {
+                  timeoutScheduler.onTimeout(replyQueueGracePeriod,
+                      // remove the queue if the same queue has been empty for the entire grace period.
+                      () -> replies.computeIfPresent(clientInvocationId,
+                          (key, q) -> q == queue && emptyId.equals(q.getEmptyId())? null: q),
+                      LOG, () -> "Timeout check failed, clientInvocationId=" + clientInvocationId);
+                }
+              }
             }
 
-            final Integer emptyId = queue.getEmptyId();
-            if (emptyId != null) {
-              timeoutScheduler.onTimeout(replyQueueGracePeriod,
-                  // remove the queue if the same queue has been empty for the entire grace period.
-                  () -> replies.computeIfPresent(clientInvocationId,
-                      (key, q) -> q == queue && emptyId.equals(q.getEmptyId())? null: q),
-                  LOG, () -> "Timeout check failed, clientInvocationId=" + clientInvocationId);
-            }
+          } catch (Throwable e) {
+            Optional.ofNullable(clientInvocationId)
+                .map(replies::remove)
+                .orElse(ReplyQueue.EMPTY)
+                .forEach(f -> f.completeExceptionally(e));
           }
-        }
+        });
       }
 
       @Override
       public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-        LOG.warn(name + ": exceptionCaught", cause);
-
-        Optional.ofNullable(clientInvocationId)
-            .map(replies::remove)
-            .orElse(ReplyQueue.EMPTY)
-            .forEach(f -> f.completeExceptionally(cause));
-
         LOG.warn(name + ": exceptionCaught", cause);
         ctx.close();
       }

@@ -188,29 +188,37 @@ public class NettyServerStreamRpc implements DataStreamServerRpc {
 
   private ChannelInboundHandler newChannelInboundHandlerAdapter(){
     return new ChannelInboundHandlerAdapter(){
-      private final RequestRef requestRef = new RequestRef();
+      //private final RequestRef requestRef = new RequestRef();
 
       @Override
       public void channelRead(ChannelHandlerContext ctx, Object msg) {
-        metrics.onRequestCreate(NettyServerStreamRpcMetrics.RequestType.CHANNEL_READ);
-        if (!(msg instanceof DataStreamRequestByteBuf)) {
-          LOG.error("Unexpected message class {}, ignoring ...", msg.getClass().getName());
-          return;
-        }
 
-        final DataStreamRequestByteBuf request = requestRef.set((DataStreamRequestByteBuf)msg);
+        ctx.channel().eventLoop().execute(() -> {
+          DataStreamRequestByteBuf request = null;
+          try {
+            metrics.onRequestCreate(NettyServerStreamRpcMetrics.RequestType.CHANNEL_READ);
+            if (!(msg instanceof DataStreamRequestByteBuf)) {
+              LOG.error("Unexpected message class {}, ignoring ...", msg.getClass().getName());
+              return;
+            }
 
-        int index = Math.toIntExact(
-            ((0xFFFFFFFFL & request.getClientId().hashCode()) + request.getStreamId()) % proxies.size());
-        requests.read(request, ctx, proxies.get(index)::getDataStreamOutput);
+            //final DataStreamRequestByteBuf request = requestRef.set((DataStreamRequestByteBuf)msg);
+            request = (DataStreamRequestByteBuf) msg;
 
-        requestRef.reset(request);
+            int index = Math.toIntExact(((0xFFFFFFFFL & request.getClientId().hashCode()) + request.getStreamId()) % proxies.size());
+            requests.read(request, ctx, proxies.get(index)::getDataStreamOutput);
+          } catch (Throwable e) {
+            LOG.error("{} channel read error request: {}", name, request, e);
+            //Optional.ofNullable(request).ifPresent(r -> requests.replyDataStreamException(e, r, ctx));
+          }
+        });
+        //requestRef.reset(request);
       }
 
       @Override
       public void exceptionCaught(ChannelHandlerContext ctx, Throwable throwable) {
-        Optional.ofNullable(requestRef.getAndSetNull())
-            .ifPresent(request -> requests.replyDataStreamException(throwable, request, ctx));
+        LOG.error(name + "has exceptionCaught:", throwable);
+        ctx.close();
       }
     };
   }
