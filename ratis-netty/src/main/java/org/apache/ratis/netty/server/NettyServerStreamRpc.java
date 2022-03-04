@@ -151,6 +151,7 @@ public class NettyServerStreamRpc implements DataStreamServerRpc {
         .group(bossGroup, workerGroup)
         .channel(bossGroup instanceof EpollEventLoopGroup ?
             EpollServerSocketChannel.class : NioServerSocketChannel.class)
+        .option(ChannelOption.SO_BACKLOG, 5120)
         .handler(new LoggingHandler(LogLevel.INFO))
         .childHandler(getInitializer())
         .childOption(ChannelOption.SO_KEEPALIVE, true)
