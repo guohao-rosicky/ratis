@@ -50,6 +50,7 @@ import org.apache.ratis.thirdparty.io.netty.handler.codec.ByteToMessageDecoder;
 import org.apache.ratis.thirdparty.io.netty.handler.codec.MessageToMessageEncoder;
 import org.apache.ratis.thirdparty.io.netty.handler.logging.LogLevel;
 import org.apache.ratis.thirdparty.io.netty.handler.logging.LoggingHandler;
+import org.apache.ratis.thirdparty.io.netty.util.concurrent.EventExecutorGroup;
 import org.apache.ratis.util.JavaUtils;
 import org.apache.ratis.util.PeerProxyMap;
 import org.apache.ratis.util.Preconditions;
@@ -121,6 +122,8 @@ public class NettyServerStreamRpc implements DataStreamServerRpc {
 
   private final NettyServerStreamRpcMetrics metrics;
 
+  private final EventExecutorGroup serverEventExecutorGroup;
+
   public NettyServerStreamRpc(RaftServer server) {
     this.name = server.getId() + "-" + JavaUtils.getClassSimpleName(getClass());
     this.metrics = new NettyServerStreamRpcMetrics(this.name);
@@ -140,6 +143,10 @@ public class NettyServerStreamRpc implements DataStreamServerRpc {
         NettyConfigKeys.DataStream.Server.workerGroupSize(properties), useEpoll);
 
     final int port = NettyConfigKeys.DataStream.port(properties);
+
+    serverEventExecutorGroup = NettyUtils.newEventLoopGroup(name + "-channelRead",
+    NettyConfigKeys.DataStream.Server.workerGroupSize(properties) * 2, useEpoll);
+
     this.channelFuture = new ServerBootstrap()
         .group(bossGroup, workerGroup)
         .channel(bossGroup instanceof EpollEventLoopGroup ?
@@ -193,7 +200,8 @@ public class NettyServerStreamRpc implements DataStreamServerRpc {
       @Override
       public void channelRead(ChannelHandlerContext ctx, Object msg) {
 
-        ctx.channel().eventLoop().execute(() -> {
+
+        serverEventExecutorGroup.submit(() -> {
           DataStreamRequestByteBuf request = null;
           try {
             metrics.onRequestCreate(NettyServerStreamRpcMetrics.RequestType.CHANNEL_READ);
@@ -210,6 +218,7 @@ public class NettyServerStreamRpc implements DataStreamServerRpc {
           } catch (Throwable e) {
             LOG.error("{} channel read error request: {}", name, request, e);
             //Optional.ofNullable(request).ifPresent(r -> requests.replyDataStreamException(e, r, ctx));
+            ctx.close();
           }
         });
         //requestRef.reset(request);

@@ -417,9 +417,8 @@ public class DataStreamManagement {
     try {
       readImpl(request, ctx, buf, getStreams).get(requestTimeout, requestTimeoutUnit);
     } catch (Throwable t) {
-      buf.release();
-
       replyDataStreamException(t, request, ctx);
+      buf.release();
       //throw t;
     }
   }
