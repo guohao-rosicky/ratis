@@ -53,6 +53,7 @@ import org.apache.ratis.statemachine.StateMachine.DataStream;
 import org.apache.ratis.statemachine.StateMachine.DataChannel;
 import org.apache.ratis.thirdparty.io.netty.buffer.ByteBuf;
 import org.apache.ratis.thirdparty.io.netty.channel.ChannelHandlerContext;
+import org.apache.ratis.thirdparty.io.netty.util.ReferenceCountUtil;
 import org.apache.ratis.util.ConcurrentUtils;
 import org.apache.ratis.util.JavaUtils;
 import org.apache.ratis.util.MemoizedSupplier;
@@ -418,7 +419,9 @@ public class DataStreamManagement {
       readImpl(request, ctx, buf, getStreams).get(requestTimeout, requestTimeoutUnit);
     } catch (Throwable t) {
       replyDataStreamException(t, request, ctx);
-      buf.release();
+      //buf.release();
+
+      ReferenceCountUtil.release(request);
       //throw t;
     }
   }

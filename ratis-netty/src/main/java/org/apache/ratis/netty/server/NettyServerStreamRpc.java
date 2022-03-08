@@ -199,6 +199,18 @@ public class NettyServerStreamRpc implements DataStreamServerRpc {
       //private final RequestRef requestRef = new RequestRef();
 
       @Override
+      public void channelActive(ChannelHandlerContext ctx) throws Exception {
+        LOG.info("client {} connected to server.", ctx.channel().remoteAddress());
+        super.channelActive(ctx);
+      }
+
+      @Override
+      public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+        LOG.info("client {} disconnected.", ctx.channel().remoteAddress());
+        super.channelInactive(ctx);
+      }
+
+      @Override
       public void channelRead(ChannelHandlerContext ctx, Object msg) {
 
 
@@ -219,7 +231,9 @@ public class NettyServerStreamRpc implements DataStreamServerRpc {
           } catch (Throwable e) {
             LOG.error("{} channel read error request: {}", name, request, e);
             //Optional.ofNullable(request).ifPresent(r -> requests.replyDataStreamException(e, r, ctx));
-            ctx.close();
+            //ctx.close();
+
+            ctx.channel().close();
           }
         });
         //requestRef.reset(request);
@@ -227,8 +241,8 @@ public class NettyServerStreamRpc implements DataStreamServerRpc {
 
       @Override
       public void exceptionCaught(ChannelHandlerContext ctx, Throwable throwable) {
-        LOG.error(name + "has exceptionCaught:", throwable);
-        ctx.close();
+        LOG.error(name + " has exceptionCaught:", throwable);
+        ctx.channel().close();
       }
     };
   }
@@ -284,8 +298,12 @@ public class NettyServerStreamRpc implements DataStreamServerRpc {
       channelFuture.channel().close().sync();
       bossGroup.shutdownGracefully(0, 100, TimeUnit.MILLISECONDS);
       workerGroup.shutdownGracefully(0, 100, TimeUnit.MILLISECONDS);
+      serverEventExecutorGroup.shutdownGracefully(0, 100, TimeUnit.MILLISECONDS);
+
       bossGroup.awaitTermination(1000, TimeUnit.MILLISECONDS);
       workerGroup.awaitTermination(1000, TimeUnit.MILLISECONDS);
+      serverEventExecutorGroup.awaitTermination(1000, TimeUnit.MILLISECONDS);
+
     } catch (InterruptedException e) {
       LOG.error(this + ": Interrupted close()", e);
     }
