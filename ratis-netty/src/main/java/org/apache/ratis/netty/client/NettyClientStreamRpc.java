@@ -169,6 +169,7 @@ public class NettyClientStreamRpc implements DataStreamClientRpc {
         .connect(NetUtils.createSocketAddr(dataStreamAddress))
         .addListener(new ConnectionListener(this));
     Channel channel = f.syncUninterruptibly().channel();
+    closeInternal();  // close old channel if need
     this.channel.getAndSet(channel);
   }
 
@@ -205,13 +206,12 @@ public class NettyClientStreamRpc implements DataStreamClientRpc {
     if (!isClosed.get() && channel.get().isOpen()) {
       return channel.get();
     } else if (isClosed.get()) {
-      LOG.warn("client is not writable.");
+      LOG.warn("client is closed not writable.");
       return null;
     } else {
       connect();
       return channel.get();
     }
-    //closeInternal();
   }
 
   private ChannelInboundHandler getClientHandler(){
@@ -247,11 +247,17 @@ public class NettyClientStreamRpc implements DataStreamClientRpc {
 
               final Integer emptyId = queue.getEmptyId();
               if (emptyId != null) {
-                timeoutScheduler.onTimeout(replyQueueGracePeriod,
-                    // remove the queue if the same queue has been empty for the entire grace period.
-                    () -> replies.computeIfPresent(clientInvocationId,
-                        (key, q) -> q == queue && emptyId.equals(q.getEmptyId())? null: q),
-                    LOG, () -> "Timeout check failed, clientInvocationId=" + clientInvocationId);
+                // remove the queue if the same queue has been empty for the entire grace period.
+                getWorkerGroup().schedule(
+                    () -> {
+                      try {
+                        replies.computeIfPresent(clientInvocationId,
+                            (key, q) -> q == queue && emptyId.equals(q.getEmptyId())? null: q);
+                      } catch (Throwable e) {
+                        LOG.error("Timeout check failed, clientInvocationId=" + clientInvocationId, e);
+                      }
+                    }, replyQueueGracePeriod.getDuration(), replyQueueGracePeriod.getUnit()
+                );
               }
             }
           }
@@ -283,9 +289,6 @@ public class NettyClientStreamRpc implements DataStreamClientRpc {
         }
         super.channelInactive(ctx);
       }
-
-
-
 
       @Override
       public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
